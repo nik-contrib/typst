@@ -68,7 +68,7 @@ semver = { workspace = true }
 serde = { workspace = true }
 
 [features]
-default = ["embed-fonts", "http-server"]
+default = ["embed-fonts", "http-server", "tree-sitter"]
 
 # Embeds some fonts into the binary, see typst-kit
 embed-fonts = ["typst-kit/embed-fonts"]
@@ -81,6 +81,9 @@ self-update = ["dep:self-replace", "dep:xz2", "dep:zip"]
 
 # Whether to vendor OpenSSL. Not applicable to Windows and macOS builds.
 vendor-openssl = ["typst-kit/vendor-openssl"]
+
+# Enable syntax highlighting with tree-sitter.
+tree-sitter = ["typst-kit/tree-sitter"]
 
 [lints]
 workspace = true

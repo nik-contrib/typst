@@ -57,5 +57,8 @@ embed-fonts = ["fonts", "dep:typst-assets", "typst-assets/fonts"]
 # Whether to vendor OpenSSL. Not applicable to Windows and macOS builds.
 vendor-openssl = ["openssl/vendored"]
 
+# Enable syntax highlighting with tree-sitter.
+tree-sitter = ["typst-library/tree-sitter"]
+
 [lints]
 workspace = true
