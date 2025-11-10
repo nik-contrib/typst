@@ -437,7 +437,7 @@ impl TreeSitterSyntax {
             None => None,
         };
 
-        let Some(language) = world.load_tree_sitter_language(
+        let Some(language) = world.tree_sitter_language(
             name.clone(),
             self.aliases.iter().map(Into::into).collect(),
             &grammar.data,

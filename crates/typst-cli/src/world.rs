@@ -235,7 +235,7 @@ impl World for SystemWorld {
         self.fonts.get(index)?.get()
     }
 
-    fn load_tree_sitter_language(
+    fn tree_sitter_language(
         &self,
         name: String,
         aliases: Vec<String>,

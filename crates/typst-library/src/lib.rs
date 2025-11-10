@@ -77,7 +77,7 @@ pub trait World: Send + Sync {
     fn font(&self, index: usize) -> Option<Font>;
 
     /// Try to get the tree-sitter language for the given name
-    fn load_tree_sitter_language(
+    fn tree_sitter_language(
         &self,
         name: String,
         aliases: Vec<String>,
@@ -126,13 +126,13 @@ macro_rules! world_impl {
                 self.deref().font(index)
             }
 
-            fn load_tree_sitter_language(
+            fn tree_sitter_language(
                 &self,
                 name: String,
                 aliases: Vec<String>,
                 wasm: &[u8],
             ) -> Option<tree_sitter::Language> {
-                self.deref().load_tree_sitter_language(name, aliases, wasm)
+                self.deref().tree_sitter_language(name, aliases, wasm)
             }
 
             fn today(&self, offset: Option<i64>) -> Option<Datetime> {
