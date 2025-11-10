@@ -221,22 +221,22 @@ impl FromValue for TreeSitterStyle {
     }
 }
 
-impl From<TreeSitterStyle> for syntect::highlighting::Style {
-    fn from(style: TreeSitterStyle) -> Self {
-        let foreground = style.foreground.map_or(
-            syntect::highlighting::Color { r: 255, g: 0, b: 0, a: 255 },
-            |bg| {
-                let fg = bg.to_rgb();
-                syntect::highlighting::Color {
-                    r: (fg.red * 255.0).round() as u8,
-                    g: (fg.green * 255.0).round() as u8,
-                    b: (fg.blue * 255.0).round() as u8,
-                    a: (fg.alpha * 255.0).round() as u8,
-                }
-            },
-        );
-        let background = style.background.map_or(
-            syntect::highlighting::Color { r: 0, g: 255, b: 0, a: 255 },
+impl TreeSitterStyle {
+    fn into_syntect_style(
+        self,
+        default_foreground: syntect::highlighting::Color,
+    ) -> syntect::highlighting::Style {
+        let foreground = self.foreground.map_or(default_foreground, |bg| {
+            let fg = bg.to_rgb();
+            syntect::highlighting::Color {
+                r: (fg.red * 255.0).round() as u8,
+                g: (fg.green * 255.0).round() as u8,
+                b: (fg.blue * 255.0).round() as u8,
+                a: (fg.alpha * 255.0).round() as u8,
+            }
+        });
+        let background = self.background.map_or(
+            syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 },
             |bg| {
                 let bg = bg.to_rgb();
                 syntect::highlighting::Color {
@@ -247,10 +247,10 @@ impl From<TreeSitterStyle> for syntect::highlighting::Style {
                 }
             },
         );
-        Self {
+        syntect::highlighting::Style {
             foreground,
             background,
-            font_style: style.attributes.into(),
+            font_style: self.attributes.into(),
         }
     }
 }
@@ -603,7 +603,7 @@ pub(crate) fn highlight(
                 &piece,
                 foreground,
                 // If its `None`, then it is a whitespace character
-                style.unwrap_or_default().into(),
+                style.unwrap_or_default().into_syntect_style(foreground),
                 line_span,
                 span_offset,
             ));
