@@ -130,12 +130,9 @@ impl TreeSitterHighlightConfiguration {
                     None => None,
                 };
 
-                let Some(configuration) = world.load_tree_sitter_language(
+                let Some(language) = world.load_tree_sitter_language(
                     Spanned::new(name.to_string(), syntaxes.span),
                     syntax.aliases.iter().map(Into::into).collect(),
-                    highlights_query,
-                    injections_query,
-                    locals_query,
                     &grammar.data,
                 ) else {
                     return Err(eco_vec!(SourceDiagnostic::warning(
@@ -144,12 +141,68 @@ impl TreeSitterHighlightConfiguration {
                     )));
                 };
 
-                let highlight_configuration = match configuration {
-                    Ok(conf) => conf,
-                    Err(errs) => {
-                        errors.extend(errs);
-                        return Err(errors);
-                    }
+                let highlights_query =
+                    match highlights_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                        Some(Ok(query)) => query,
+                        Some(Err(errs)) => {
+                            errors.extend(errs);
+                            ""
+                        }
+                        None => "",
+                    };
+                let injections_query =
+                    match injections_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                        Some(Ok(query)) => query,
+                        Some(Err(errs)) => {
+                            errors.extend(errs);
+                            ""
+                        }
+                        None => "",
+                    };
+                let locals_query =
+                    match locals_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                        Some(Ok(query)) => query,
+                        Some(Err(errs)) => {
+                            errors.extend(errs);
+                            ""
+                        }
+                        None => "",
+                    };
+
+                let lang_hash = typst_utils::hash128(&language);
+                let mut highlight_configuration =
+                    match tree_sitter_highlight::HighlightConfiguration::new(
+                        language.clone(),
+                        &name,
+                        highlights_query,
+                        injections_query,
+                        locals_query,
+                    ) {
+                        Ok(conf) => conf,
+                        Err(error) => {
+                            errors.push(crate::diag::SourceDiagnostic::warning(
+                                syntaxes.span,
+                                format!(
+                                    "failed to parse tree-sitter {} `{name}`: {error}",
+                                    "query for language",
+                                ),
+                            ));
+                            return Err(errors);
+                        }
+                    };
+
+                if !errors.is_empty() {
+                    return Err(errors);
+                }
+
+                highlight_configuration.configure(SCOPES);
+
+                let highlight_configuration = TreeSitterHighlightConfiguration {
+                    aliases: syntax.aliases.iter().map(Into::into).collect(),
+                    config: std::sync::Arc::new(typst_utils::ManuallyHash::new(
+                        highlight_configuration,
+                        lang_hash,
+                    )),
                 };
 
                 if !errors.is_empty() {
@@ -505,7 +558,7 @@ pub(crate) fn highlight(
     for event in highlighter
         .highlight(&syntax.config, text.as_bytes(), None, |lang| {
             all_configs
-                .into_iter()
+                .iter()
                 .find(|config| config.matches(lang))
                 .map(|it| &**it.config)
         })

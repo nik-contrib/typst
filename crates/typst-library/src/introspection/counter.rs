@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
@@ -285,7 +284,6 @@ impl Counter {
             engine.introspector,
             engine.traced,
             TrackedMut::reborrow_mut(&mut engine.sink),
-            engine.tree_sitter_grammars,
             engine.route.track(),
         )
     }
@@ -299,9 +297,6 @@ impl Counter {
         introspector: Tracked<Introspector>,
         traced: Tracked<Traced>,
         sink: TrackedMut<Sink>,
-        tree_sitter_grammars: TrackedMut<
-            HashMap<tree_sitter::Language, tree_sitter_highlight::HighlightConfiguration>,
-        >,
         route: Tracked<Route>,
     ) -> SourceResult<EcoVec<(CounterState, NonZeroUsize)>> {
         let mut engine = Engine {
