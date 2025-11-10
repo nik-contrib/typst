@@ -57,6 +57,9 @@ toml = { workspace = true }
 ureq = { workspace = true }
 xz2 = { workspace = true, optional = true }
 zip = { workspace = true, optional = true }
+tree-sitter = { workspace = true }
+tree-sitter-highlight = { workspace = true }
+dashmap = { workspace = true }
 
 [build-dependencies]
 chrono = { workspace = true }
@@ -68,7 +71,7 @@ semver = { workspace = true }
 serde = { workspace = true }
 
 [features]
-default = ["embed-fonts", "http-server", "tree-sitter"]
+default = ["embed-fonts", "http-server"]
 
 # Embeds some fonts into the binary, see typst-kit
 embed-fonts = ["typst-kit/embed-fonts"]
@@ -81,9 +84,6 @@ self-update = ["dep:self-replace", "dep:xz2", "dep:zip"]
 
 # Whether to vendor OpenSSL. Not applicable to Windows and macOS builds.
 vendor-openssl = ["typst-kit/vendor-openssl"]
-
-# Enable syntax highlighting with tree-sitter.
-tree-sitter = ["typst-kit/tree-sitter"]
 
 [lints]
 workspace = true

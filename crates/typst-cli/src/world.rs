@@ -1,17 +1,20 @@
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, OnceLock};
 use std::{fmt, fs, io, mem};
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
-use ecow::{EcoString, eco_format};
+use dashmap::DashMap;
+use ecow::{EcoString, EcoVec, eco_format};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use typst::diag::{FileError, FileResult};
+use typst::diag::{FileError, FileResult, LoadedWithin as _, SourceResult};
 use typst::foundations::{Bytes, Datetime, Dict, IntoValue};
-use typst::syntax::{FileId, Lines, Source, VirtualPath};
+use typst::loading::Loaded;
+use typst::syntax::{FileId, Lines, Source, Spanned, VirtualPath};
 use typst::text::{Font, FontBook};
-use typst::utils::LazyHash;
+use typst::utils::{LazyHash, ManuallyHash};
 use typst::{Library, LibraryExt, World};
 use typst_kit::fonts::{FontSlot, Fonts};
 use typst_kit::package::PackageStorage;
@@ -42,6 +45,11 @@ pub struct SystemWorld {
     fonts: Vec<FontSlot>,
     /// Maps file ids to source files and buffers.
     slots: Mutex<FxHashMap<FileId, FileSlot>>,
+    /// Map from name of language to the tree-sitter grammar for it.
+    /// Multiple names can map to a single language.
+    tree_sitter_languages: Mutex<typst::text::tree_sitter::Languages>,
+    tree_sitter_configs:
+        HashMap<tree_sitter::Language, tree_sitter_highlight::HighlightConfiguration>,
     /// Holds information about where packages are stored.
     package_storage: PackageStorage,
     /// The current datetime if requested. This is stored here to ensure it is
@@ -140,6 +148,10 @@ impl SystemWorld {
             root,
             main,
             library: LazyHash::new(library),
+            tree_sitter_languages: Mutex::new(
+                typst::text::tree_sitter::Languages::default(),
+            ),
+            tree_sitter_configs: HashMap::new(),
             book: LazyHash::new(fonts.book),
             fonts: fonts.fonts,
             slots: Mutex::new(FxHashMap::default()),
@@ -202,6 +214,10 @@ impl SystemWorld {
     }
 }
 
+static LANGS: LazyLock<
+    DashMap<tree_sitter::Language, tree_sitter_highlight::HighlightConfiguration>,
+> = LazyLock::new(DashMap::new);
+
 impl World for SystemWorld {
     fn library(&self) -> &LazyHash<Library> {
         &self.library
@@ -227,6 +243,108 @@ impl World for SystemWorld {
         // comemo's validation may invoke this function with an invalid index. This is
         // impossible in typst-cli but possible if a custom tool mutates the fonts.
         self.fonts.get(index)?.get()
+    }
+
+    fn get_tree_sitter_language(
+        &self,
+        lang: String,
+    ) -> Option<typst::utils::ManuallyHash<&tree_sitter_highlight::HighlightConfiguration>>
+    {
+        self.tree_sitter_languages
+            .lock()
+            .get(&lang)
+            .as_ref()
+            .and_then(|lang| LANGS.get(lang).as_ref().map(|r| r.value()))
+            .map(|conf| ManuallyHash::new(conf, typst::utils::hash128(&conf.language)))
+    }
+
+    fn load_tree_sitter_language(
+        &self,
+        name: Spanned<String>,
+        aliases: Vec<String>,
+        highlights_query: Option<Loaded>,
+        injections_query: Option<Loaded>,
+        locals_query: Option<Loaded>,
+        wasm: &[u8],
+    ) -> Option<SourceResult<typst::text::tree_sitter::TreeSitterHighlightConfiguration>>
+    {
+        let language = self.tree_sitter_languages.lock().insert(
+            name.v.clone(),
+            aliases.clone().into(),
+            wasm,
+        );
+
+        let mut errors = EcoVec::new();
+
+        let highlights_query =
+            match highlights_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                Some(Ok(query)) => query,
+                Some(Err(errs)) => {
+                    errors.extend(errs);
+                    ""
+                }
+                None => "",
+            };
+        let injections_query =
+            match injections_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                Some(Ok(query)) => query,
+                Some(Err(errs)) => {
+                    errors.extend(errs);
+                    ""
+                }
+                None => "",
+            };
+        let locals_query = match locals_query.as_ref().map(|q| q.data.as_str().within(q))
+        {
+            Some(Ok(query)) => query,
+            Some(Err(errs)) => {
+                errors.extend(errs);
+                ""
+            }
+            None => "",
+        };
+
+        let lang_hash = typst::utils::hash128(&language);
+        let mut highlight_configuration =
+            match tree_sitter_highlight::HighlightConfiguration::new(
+                language.clone(),
+                &name.v,
+                highlights_query,
+                injections_query,
+                locals_query,
+            ) {
+                Ok(conf) => conf,
+                Err(error) => {
+                    errors.push(typst::diag::SourceDiagnostic::warning(
+                        name.span,
+                        format!(
+                            "failed to parse tree-sitter {} `{}`: {error}",
+                            "query for language", name.v
+                        ),
+                    ));
+                    return Some(Err(errors));
+                }
+            };
+
+        if !errors.is_empty() {
+            return Some(Err(errors));
+        }
+
+        highlight_configuration.configure(typst::text::tree_sitter::SCOPES);
+
+        LANGS.lock().insert(language, highlight_configuration);
+
+        // let highlight_configuration =
+        //     typst::text::tree_sitter::TreeSitterHighlightConfiguration {
+        //         aliases: aliases.into_iter().map(Into::into).collect(),
+        //         config: std::sync::Arc::new(typst::utils::ManuallyHash::new(
+        //             highlight_configuration,
+        //             lang_hash,
+        //         )),
+        //     };
+        todo!();
+
+        // Some(Ok(highlight_configuration))
     }
 
     fn today(&self, offset: Option<i64>) -> Option<Datetime> {

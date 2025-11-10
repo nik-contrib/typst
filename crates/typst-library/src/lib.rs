@@ -30,11 +30,12 @@ use std::ops::{Deref, Range};
 
 use serde::{Deserialize, Serialize};
 use typst_syntax::{FileId, Source, Span};
-use typst_utils::{LazyHash, SmallBitSet};
+use typst_utils::{LazyHash, ManuallyHash, SmallBitSet};
 
 use crate::diag::FileResult;
 use crate::foundations::{Array, Binding, Bytes, Datetime, Dict, Module, Scope, Styles};
 use crate::layout::{Alignment, Dir};
+use crate::loading::Loaded;
 use crate::routines::Routines;
 use crate::text::{Font, FontBook};
 use crate::visualize::Color;
@@ -76,6 +77,35 @@ pub trait World: Send + Sync {
     /// Try to access the font with the given index in the font book.
     fn font(&self, index: usize) -> Option<Font>;
 
+    /// Get the tree-sitter language of the given name
+    fn get_tree_sitter_language(
+        &self,
+        lang: String,
+    ) -> Option<ManuallyHash<&tree_sitter_highlight::HighlightConfiguration>> {
+        let _ = lang;
+        None
+    }
+
+    /// Try to get the tree-sitter language for the given name
+    fn load_tree_sitter_language(
+        &self,
+        name: typst_syntax::Spanned<String>,
+        aliases: Vec<String>,
+        highlights_query: Option<Loaded>,
+        injections_query: Option<Loaded>,
+        locals_query: Option<Loaded>,
+        wasm: &[u8],
+    ) -> Option<diag::SourceResult<text::tree_sitter::TreeSitterHighlightConfiguration>>
+    {
+        let _ = name;
+        let _ = aliases;
+        let _ = highlights_query;
+        let _ = injections_query;
+        let _ = locals_query;
+        let _ = wasm;
+        None
+    }
+
     /// Get the current date.
     ///
     /// If no offset is specified, the local date should be chosen. Otherwise,
@@ -111,6 +141,37 @@ macro_rules! world_impl {
 
             fn font(&self, index: usize) -> Option<Font> {
                 self.deref().font(index)
+            }
+
+            fn get_tree_sitter_language(
+                &self,
+                lang: String,
+            ) -> Option<ManuallyHash<&tree_sitter_highlight::HighlightConfiguration>>
+            {
+                self.deref().get_tree_sitter_language(lang)
+            }
+
+            fn load_tree_sitter_language(
+                &self,
+                name: typst_syntax::Spanned<String>,
+                aliases: Vec<String>,
+                highlights_query: Option<Loaded>,
+                injections_query: Option<Loaded>,
+                locals_query: Option<Loaded>,
+                wasm: &[u8],
+            ) -> Option<
+                crate::diag::SourceResult<
+                    text::tree_sitter::TreeSitterHighlightConfiguration,
+                >,
+            > {
+                self.deref().load_tree_sitter_language(
+                    name,
+                    aliases,
+                    highlights_query,
+                    injections_query,
+                    locals_query,
+                    wasm,
+                )
             }
 
             fn today(&self, offset: Option<i64>) -> Option<Datetime> {

@@ -12,10 +12,6 @@ categories = { workspace = true }
 keywords = { workspace = true }
 readme = { workspace = true }
 
-[features]
-# Enable syntax highlighting with tree-sitter.
-tree-sitter = ["dep:tree-sitter-highlight", "dep:wasmtime", "dep:tree-sitter"]
-
 [dependencies]
 typst-assets = { workspace = true }
 typst-macros = { workspace = true }
@@ -75,9 +71,9 @@ usvg = { workspace = true }
 utf8_iter = { workspace = true }
 wasmi = { workspace = true }
 xmlwriter = { workspace = true }
-tree-sitter-highlight = { workspace = true, optional = true }
-wasmtime = { workspace = true, optional = true }
-tree-sitter = { workspace = true, optional = true }
+tree-sitter-highlight = { workspace = true }
+wasmtime = { workspace = true }
+tree-sitter = { workspace = true }
 
 [dev-dependencies]
 typst-dev-assets = { workspace = true }
