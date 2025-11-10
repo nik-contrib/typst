@@ -224,7 +224,7 @@ impl FromValue for TreeSitterStyle {
 impl From<TreeSitterStyle> for syntect::highlighting::Style {
     fn from(style: TreeSitterStyle) -> Self {
         let foreground = style.foreground.map_or(
-            syntect::highlighting::Color { r: 255, g: 0, b: 0, a: 0 },
+            syntect::highlighting::Color { r: 255, g: 0, b: 0, a: 255 },
             |bg| {
                 let fg = bg.to_rgb();
                 syntect::highlighting::Color {
@@ -236,7 +236,7 @@ impl From<TreeSitterStyle> for syntect::highlighting::Style {
             },
         );
         let background = style.background.map_or(
-            syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 },
+            syntect::highlighting::Color { r: 0, g: 255, b: 0, a: 255 },
             |bg| {
                 let bg = bg.to_rgb();
                 syntect::highlighting::Color {
@@ -518,8 +518,6 @@ pub(crate) fn highlight(
     // Whole text of the code block
     let text = lines.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>().join("\n");
 
-    // panic!("{text}");
-
     let mut current_highlight = None;
 
     // Text of the code block, broken up into individual
@@ -541,7 +539,27 @@ pub(crate) fn highlight(
             }
             tree_sitter_highlight::HighlightEvent::HighlightStart(highlight) => {
                 let scope = SCOPES[highlight.0];
-                let color = theme.0.get(scope).copied().unwrap_or_default();
+
+                // For a string like "foo.bar.baz", we want to check if "foo.bar.baz" is a valid
+                // key. If not, check "foo.bar". If not, check "foo"
+
+                let mut current_scope = Vec::new();
+
+                // List of all the scopes we'll check at the end
+                let mut all_scopes = Vec::new();
+
+                for part in scope.split(".") {
+                    current_scope.push(part);
+                    all_scopes.push(current_scope.join("."));
+                }
+
+                let color = all_scopes
+                    .into_iter()
+                    .rev()
+                    .find_map(|scope| theme.0.get(&*scope))
+                    .copied()
+                    .unwrap_or_default();
+
                 current_highlight = Some(color);
             }
             tree_sitter_highlight::HighlightEvent::HighlightEnd => {
