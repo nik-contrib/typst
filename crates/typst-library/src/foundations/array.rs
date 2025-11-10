@@ -1217,20 +1217,6 @@ impl<T> Reflect for Vec<T> {
     }
 }
 
-impl<T> Reflect for Box<[T]> {
-    fn input() -> CastInfo {
-        Array::input()
-    }
-
-    fn output() -> CastInfo {
-        Array::output()
-    }
-
-    fn castable(value: &Value) -> bool {
-        Array::castable(value)
-    }
-}
-
 impl<T: Reflect, const N: usize> Reflect for SmallVec<[T; N]> {
     fn input() -> CastInfo {
         Array::input()
@@ -1251,16 +1237,6 @@ impl<T: IntoValue> IntoValue for Vec<T> {
     }
 }
 
-impl<T: IntoValue> IntoValue for Box<[T]> {
-    fn into_value(self) -> Value {
-        Value::Array(
-            <Box<[T]> as IntoIterator>::into_iter(self)
-                .map(IntoValue::into_value)
-                .collect(),
-        )
-    }
-}
-
 impl<T: IntoValue, const N: usize> IntoValue for SmallVec<[T; N]> {
     fn into_value(self) -> Value {
         Value::Array(self.into_iter().map(IntoValue::into_value).collect())
@@ -1270,17 +1246,6 @@ impl<T: IntoValue, const N: usize> IntoValue for SmallVec<[T; N]> {
 impl<T: FromValue> FromValue for Vec<T> {
     fn from_value(value: Value) -> HintedStrResult<Self> {
         value.cast::<Array>()?.into_iter().map(Value::cast).collect()
-    }
-}
-
-impl<T: FromValue> FromValue for Box<[T]> {
-    fn from_value(value: Value) -> HintedStrResult<Self> {
-        value
-            .cast::<Array>()?
-            .into_iter()
-            .map(Value::cast)
-            .collect::<HintedStrResult<Vec<_>>>()
-            .map(Vec::into_boxed_slice)
     }
 }
 

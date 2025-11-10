@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime, Dict, IntoValue};
-use typst::syntax::{FileId, Lines, Source, Spanned, VirtualPath};
+use typst::syntax::{FileId, Lines, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
@@ -237,12 +237,12 @@ impl World for SystemWorld {
 
     fn load_tree_sitter_language(
         &self,
-        name: Spanned<String>,
+        name: String,
         aliases: Vec<String>,
         wasm: &[u8],
     ) -> Option<tree_sitter::Language> {
         Some(self.tree_sitter_languages.lock().insert(
-            name.v.clone(),
+            name.clone(),
             aliases.clone().into(),
             wasm,
         ))

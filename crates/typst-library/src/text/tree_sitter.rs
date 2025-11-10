@@ -131,7 +131,7 @@ impl TreeSitterHighlightConfiguration {
                 };
 
                 let Some(language) = world.load_tree_sitter_language(
-                    Spanned::new(name.to_string(), syntaxes.span),
+                    name.clone(),
                     syntax.aliases.iter().map(Into::into).collect(),
                     &grammar.data,
                 ) else {
@@ -473,7 +473,7 @@ pub struct TreeSitterSyntax {
     /// Name of the tree-sitter grammar
     name: EcoString,
     /// Any aliases of the language
-    aliases: Box<[EcoString]>,
+    aliases: Vec<EcoString>,
     /// `highlights.scm` query for syntax highlighting
     highlights_query: Option<DataSource>,
     /// `injections.scm` query for injecting nested grammars

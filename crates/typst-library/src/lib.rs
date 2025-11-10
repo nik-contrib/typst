@@ -79,7 +79,7 @@ pub trait World: Send + Sync {
     /// Try to get the tree-sitter language for the given name
     fn load_tree_sitter_language(
         &self,
-        name: typst_syntax::Spanned<String>,
+        name: String,
         aliases: Vec<String>,
         wasm: &[u8],
     ) -> Option<tree_sitter::Language> {
@@ -128,7 +128,7 @@ macro_rules! world_impl {
 
             fn load_tree_sitter_language(
                 &self,
-                name: typst_syntax::Spanned<String>,
+                name: String,
                 aliases: Vec<String>,
                 wasm: &[u8],
             ) -> Option<tree_sitter::Language> {
