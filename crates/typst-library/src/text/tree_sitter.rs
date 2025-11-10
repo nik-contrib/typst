@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use bitflags::bitflags;
 use comemo::Tracked;
 use ecow::{EcoString, EcoVec, eco_vec};
+use std::hash::Hash;
+use syntect::highlighting::FontStyle;
 use typst_syntax::{Span, Spanned};
 use typst_utils::ManuallyHash;
 
@@ -13,66 +16,13 @@ use crate::{
     visualize::Color,
 };
 
-#[allow(clippy::derived_hash_with_manual_eq)]
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 pub struct TreeSitterHighlightConfiguration {
-    pub aliases: Box<[EcoString]>,
-    pub config: Arc<ManuallyHash<tree_sitter_highlight::HighlightConfiguration>>,
-}
-
-/// WASM Engine is shared across all threads
-static ENGINE: std::sync::OnceLock<wasmtime::Engine> = std::sync::OnceLock::new();
-
-thread_local! {
-    /// Each thread has its own tree-sitter parser with its own WASM store
-    /// That is necessary since when we add new languages to the tree-sitter parser,
-    /// we first have to take the WasmStore out, add the language, then add it back in.
-    ///
-    /// If multiple threads are using the same WasmStore, that approach would cause problems -
-    /// as the WasmStore would be missing sometimes, so syntax highlighting would randomly fail
-    pub(crate) static PARSER: std::cell::RefCell<tree_sitter::Parser>  = {
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_wasm_store(tree_sitter::WasmStore::new(ENGINE.get_or_init(Default::default)).unwrap()).unwrap();
-        std::cell::RefCell::new(parser)
-    };
-}
-
-#[derive(Default)]
-pub struct Languages(
-    std::collections::HashMap<String, usize>,
-    Vec<tree_sitter::Language>,
-);
-
-impl Languages {
-    pub fn get(&self, language: &str) -> Option<tree_sitter::Language> {
-        // NOTE: Clone is cheap. tree_sitter::Language is a pointer
-        self.0.get(language).map(|lang| &self.1[*lang]).cloned()
-    }
-
-    pub fn insert(
-        &mut self,
-        name: String,
-        aliases: Box<[String]>,
-        language_wasm: &[u8],
-    ) -> tree_sitter::Language {
-        let language = PARSER.with(|parser| {
-            let mut parser = parser.borrow_mut();
-            let mut store = parser
-                .take_wasm_store()
-                .expect("set once during initialization and always re-set after");
-            let language = store.load_language(&name, language_wasm).unwrap();
-            parser.set_wasm_store(store).expect("succeded during initialization");
-            language
-        });
-
-        let index = self.1.len();
-        self.1.push(language.clone());
-        self.0.insert(name, index);
-        for alias in aliases {
-            self.0.insert(alias, index);
-        }
-        language
-    }
+    /// These names can also refer to this highlight configuration
+    aliases: Box<[EcoString]>,
+    /// Contains the actual highlight configuration, which tells us how to
+    /// do syntax highlighting for the particular language
+    config: Arc<ManuallyHash<tree_sitter_highlight::HighlightConfiguration>>,
 }
 
 impl TreeSitterHighlightConfiguration {
@@ -87,130 +37,7 @@ impl TreeSitterHighlightConfiguration {
             .v
             .0
             .iter()
-            .map(|syntax| {
-                let mut errors = EcoVec::new();
-                let grammar = Spanned::new(&syntax.grammar, syntaxes.span).load(world)?;
-
-                let name = syntax.name.to_string();
-
-                let highlights_query = match syntax
-                    .highlights_query
-                    .as_ref()
-                    .map(|query| Spanned::new(query, syntaxes.span).load(world))
-                {
-                    Some(Ok(query)) => Some(query),
-                    Some(Err(errs)) => {
-                        errors.extend(errs);
-                        None
-                    }
-                    None => None,
-                };
-                let injections_query = match syntax
-                    .injections_query
-                    .as_ref()
-                    .map(|query| Spanned::new(query, syntaxes.span).load(world))
-                {
-                    Some(Ok(query)) => Some(query),
-                    Some(Err(errs)) => {
-                        errors.extend(errs);
-                        None
-                    }
-                    None => None,
-                };
-                let locals_query = match syntax
-                    .locals_query
-                    .as_ref()
-                    .map(|query| Spanned::new(query, syntaxes.span).load(world))
-                {
-                    Some(Ok(query)) => Some(query),
-                    Some(Err(errs)) => {
-                        errors.extend(errs);
-                        None
-                    }
-                    None => None,
-                };
-
-                let Some(language) = world.load_tree_sitter_language(
-                    name.clone(),
-                    syntax.aliases.iter().map(Into::into).collect(),
-                    &grammar.data,
-                ) else {
-                    return Err(eco_vec!(SourceDiagnostic::warning(
-                        syntaxes.span,
-                        format!("failed to load tree-sitter grammar for `{name}`")
-                    )));
-                };
-
-                let highlights_query =
-                    match highlights_query.as_ref().map(|q| q.data.as_str().within(q)) {
-                        Some(Ok(query)) => query,
-                        Some(Err(errs)) => {
-                            errors.extend(errs);
-                            ""
-                        }
-                        None => "",
-                    };
-                let injections_query =
-                    match injections_query.as_ref().map(|q| q.data.as_str().within(q)) {
-                        Some(Ok(query)) => query,
-                        Some(Err(errs)) => {
-                            errors.extend(errs);
-                            ""
-                        }
-                        None => "",
-                    };
-                let locals_query =
-                    match locals_query.as_ref().map(|q| q.data.as_str().within(q)) {
-                        Some(Ok(query)) => query,
-                        Some(Err(errs)) => {
-                            errors.extend(errs);
-                            ""
-                        }
-                        None => "",
-                    };
-
-                let lang_hash = typst_utils::hash128(&language);
-                let mut highlight_configuration =
-                    match tree_sitter_highlight::HighlightConfiguration::new(
-                        language.clone(),
-                        &name,
-                        highlights_query,
-                        injections_query,
-                        locals_query,
-                    ) {
-                        Ok(conf) => conf,
-                        Err(error) => {
-                            errors.push(crate::diag::SourceDiagnostic::warning(
-                                syntaxes.span,
-                                format!(
-                                    "failed to parse tree-sitter {} `{name}`: {error}",
-                                    "query for language",
-                                ),
-                            ));
-                            return Err(errors);
-                        }
-                    };
-
-                if !errors.is_empty() {
-                    return Err(errors);
-                }
-
-                highlight_configuration.configure(SCOPES);
-
-                let highlight_configuration = TreeSitterHighlightConfiguration {
-                    aliases: syntax.aliases.iter().map(Into::into).collect(),
-                    config: std::sync::Arc::new(typst_utils::ManuallyHash::new(
-                        highlight_configuration,
-                        lang_hash,
-                    )),
-                };
-
-                if !errors.is_empty() {
-                    return Err(errors);
-                }
-
-                Ok(highlight_configuration)
-            })
+            .map(|syntax| syntax.load(world, syntaxes.span))
             .collect::<SourceResult<_>>()?;
 
         Ok(Derived::new(syntaxes.v, configurations))
@@ -294,7 +121,13 @@ impl TreeSitterHighlightConfiguration {
 
 impl PartialEq for TreeSitterHighlightConfiguration {
     fn eq(&self, other: &Self) -> bool {
-        self.config.language_name == other.config.language_name
+        self.config.language == other.config.language
+    }
+}
+
+impl std::hash::Hash for TreeSitterHighlightConfiguration {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.config.language.hash(state);
     }
 }
 
@@ -306,13 +139,94 @@ impl std::fmt::Debug for TreeSitterHighlightConfiguration {
     }
 }
 
+/// WASM Engine is shared across all threads
+static ENGINE: std::sync::OnceLock<wasmtime::Engine> = std::sync::OnceLock::new();
+
+thread_local! {
+    /// Each thread has its own tree-sitter parser with its own WASM store
+    /// That is necessary since when we add new languages to the tree-sitter parser,
+    /// we first have to take the WasmStore out, add the language, then add it back in.
+    ///
+    /// If multiple threads are using the same WasmStore, that approach would cause problems -
+    /// as the WasmStore would be missing sometimes, so syntax highlighting would randomly fail
+    pub(crate) static PARSER: std::cell::RefCell<tree_sitter::Parser>  = {
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_wasm_store(tree_sitter::WasmStore::new(ENGINE.get_or_init(Default::default)).unwrap()).unwrap();
+        std::cell::RefCell::new(parser)
+    };
+}
+
+/// Map from names of languages, to parsers of those languages.
+/// Multiple names can point to the same language.
+#[derive(Default)]
+pub struct Languages(
+    std::collections::HashMap<String, usize>,
+    Vec<tree_sitter::Language>,
+);
+
+impl Languages {
+    pub fn get(&self, language: &str) -> Option<tree_sitter::Language> {
+        self.0.get(language).map(|lang| &self.1[*lang]).cloned()
+    }
+
+    pub fn insert(
+        &mut self,
+        name: String,
+        aliases: Box<[String]>,
+        language_wasm: &[u8],
+    ) -> tree_sitter::Language {
+        let language = PARSER.with(|parser| {
+            let mut parser = parser.borrow_mut();
+            let mut store = parser
+                .take_wasm_store()
+                .expect("set once during initialization and always re-set after");
+            let language = store.load_language(&name, language_wasm).unwrap();
+            parser.set_wasm_store(store).expect("succeded during initialization");
+            language
+        });
+
+        let index = self.1.len();
+        self.1.push(language.clone());
+        self.0.insert(name, index);
+        for alias in aliases {
+            self.0.insert(alias, index);
+        }
+        language
+    }
+}
+
+bitflags! {
+    /// Attributes of syntax-highlighted text
+    #[derive(Default, Copy, Clone, Debug, PartialEq, Hash)]
+    pub struct FontAttributes: u8 {
+        const BOLD = 0b00000001;
+        const UNDERLINE = 0b00000010;
+        const ITALIC = 0b00000100;
+    }
+}
+
+impl From<FontAttributes> for FontStyle {
+    fn from(attrs: FontAttributes) -> Self {
+        let mut font_style = FontStyle::empty();
+        if attrs.contains(FontAttributes::BOLD) {
+            font_style.insert(FontStyle::BOLD);
+        }
+        if attrs.contains(FontAttributes::UNDERLINE) {
+            font_style.insert(FontStyle::UNDERLINE);
+        }
+        if attrs.contains(FontAttributes::ITALIC) {
+            font_style.insert(FontStyle::ITALIC);
+        }
+        font_style
+    }
+}
+
+/// Style of text highlighted by tree-sitter
 #[derive(std::hash::Hash, Clone, Debug, PartialEq, Copy)]
 pub struct TreeSitterStyle {
     foreground: Color,
     background: Option<Color>,
-    bold: bool,
-    underline: bool,
-    italic: bool,
+    attributes: FontAttributes,
 }
 
 impl Default for TreeSitterStyle {
@@ -320,9 +234,7 @@ impl Default for TreeSitterStyle {
         Self {
             foreground: Color::from_u8(0, 0, 0, 0),
             background: Default::default(),
-            bold: Default::default(),
-            underline: Default::default(),
-            italic: Default::default(),
+            attributes: FontAttributes::default(),
         }
     }
 }
@@ -346,9 +258,9 @@ impl IntoValue for TreeSitterStyle {
         crate::foundations::dict! {
             "background" => self.background,
             "foreground" => self.foreground,
-            "bold" => self.bold,
-            "underline" => self.underline,
-            "italic" => self.italic,
+            "bold" => self.attributes.contains(FontAttributes::BOLD),
+            "underline" => self.attributes.contains(FontAttributes::UNDERLINE),
+            "italic" => self.attributes.contains(FontAttributes::ITALIC),
         }
         .into_value()
     }
@@ -363,27 +275,33 @@ impl FromValue for TreeSitterStyle {
             return Ok(Self {
                 foreground,
                 background: None,
-                bold: false,
-                underline: false,
-                italic: false,
+                attributes: FontAttributes::default(),
             });
         }
 
         let mut dict = value.cast::<Dict>()?;
+        let mut attributes = FontAttributes::default();
+
+        if dict.take("bold")?.cast()? {
+            attributes.insert(FontAttributes::BOLD);
+        }
+        if dict.take("underline")?.cast()? {
+            attributes.insert(FontAttributes::UNDERLINE);
+        }
+        if dict.take("italic")?.cast()? {
+            attributes.insert(FontAttributes::ITALIC);
+        }
 
         Ok(Self {
             foreground: dict.take("foreground")?.cast()?,
             background: dict.take("background")?.cast()?,
-            bold: dict.take("bold")?.cast()?,
-            underline: dict.take("underline")?.cast()?,
-            italic: dict.take("italic")?.cast()?,
+            attributes,
         })
     }
 }
 
 impl From<TreeSitterStyle> for syntect::highlighting::Style {
     fn from(style: TreeSitterStyle) -> Self {
-        use syntect::highlighting::FontStyle;
         let foreground = style.foreground.to_rgb();
         let background = style.background.map_or(
             syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 },
@@ -397,16 +315,6 @@ impl From<TreeSitterStyle> for syntect::highlighting::Style {
                 }
             },
         );
-        let mut font_style = FontStyle::empty();
-        if style.bold {
-            font_style.insert(FontStyle::BOLD);
-        }
-        if style.underline {
-            font_style.insert(FontStyle::UNDERLINE);
-        }
-        if style.italic {
-            font_style.insert(FontStyle::ITALIC);
-        }
         Self {
             foreground: syntect::highlighting::Color {
                 r: (foreground.red * 255.0).round() as u8,
@@ -415,14 +323,12 @@ impl From<TreeSitterStyle> for syntect::highlighting::Style {
                 a: (foreground.alpha * 255.0).round() as u8,
             },
             background,
-            font_style,
+            font_style: style.attributes.into(),
         }
     }
 }
 
 /// The syntax highlighting theme to use
-///
-/// The highlight corresponding to `scopes[index]` is `highlights[index]`
 #[derive(std::hash::Hash, Clone, Debug, PartialEq)]
 pub struct TreeSitterTheme(BTreeMap<EcoString, TreeSitterStyle>);
 
@@ -480,6 +386,138 @@ pub struct TreeSitterSyntax {
     injections_query: Option<DataSource>,
     /// `locals.scm` query
     locals_query: Option<DataSource>,
+}
+
+impl TreeSitterSyntax {
+    /// Load syntax from source
+    fn load(
+        &self,
+        world: Tracked<dyn World + '_>,
+        span: Span,
+    ) -> SourceResult<TreeSitterHighlightConfiguration> {
+        let mut errors = EcoVec::new();
+        let grammar = Spanned::new(&self.grammar, span).load(world)?;
+
+        let name = self.name.to_string();
+
+        let highlights_query = match self
+            .highlights_query
+            .as_ref()
+            .map(|query| Spanned::new(query, span).load(world))
+        {
+            Some(Ok(query)) => Some(query),
+            Some(Err(errs)) => {
+                errors.extend(errs);
+                None
+            }
+            None => None,
+        };
+        let injections_query = match self
+            .injections_query
+            .as_ref()
+            .map(|query| Spanned::new(query, span).load(world))
+        {
+            Some(Ok(query)) => Some(query),
+            Some(Err(errs)) => {
+                errors.extend(errs);
+                None
+            }
+            None => None,
+        };
+        let locals_query = match self
+            .locals_query
+            .as_ref()
+            .map(|query| Spanned::new(query, span).load(world))
+        {
+            Some(Ok(query)) => Some(query),
+            Some(Err(errs)) => {
+                errors.extend(errs);
+                None
+            }
+            None => None,
+        };
+
+        let Some(language) = world.load_tree_sitter_language(
+            name.clone(),
+            self.aliases.iter().map(Into::into).collect(),
+            &grammar.data,
+        ) else {
+            return Err(eco_vec!(SourceDiagnostic::warning(
+                span,
+                format!("failed to load tree-sitter grammar for `{name}`")
+            )));
+        };
+
+        let highlights_query =
+            match highlights_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                Some(Ok(query)) => query,
+                Some(Err(errs)) => {
+                    errors.extend(errs);
+                    ""
+                }
+                None => "",
+            };
+        let injections_query =
+            match injections_query.as_ref().map(|q| q.data.as_str().within(q)) {
+                Some(Ok(query)) => query,
+                Some(Err(errs)) => {
+                    errors.extend(errs);
+                    ""
+                }
+                None => "",
+            };
+        let locals_query = match locals_query.as_ref().map(|q| q.data.as_str().within(q))
+        {
+            Some(Ok(query)) => query,
+            Some(Err(errs)) => {
+                errors.extend(errs);
+                ""
+            }
+            None => "",
+        };
+
+        let lang_hash = typst_utils::hash128(&language);
+        let mut highlight_configuration =
+            match tree_sitter_highlight::HighlightConfiguration::new(
+                language.clone(),
+                &name,
+                highlights_query,
+                injections_query,
+                locals_query,
+            ) {
+                Ok(conf) => conf,
+                Err(error) => {
+                    errors.push(crate::diag::SourceDiagnostic::warning(
+                        span,
+                        format!(
+                            "failed to parse tree-sitter {} `{name}`: {error}",
+                            "query for language",
+                        ),
+                    ));
+                    return Err(errors);
+                }
+            };
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        highlight_configuration.configure(SCOPES);
+
+        let highlight_configuration = TreeSitterHighlightConfiguration {
+            aliases: self.aliases.iter().map(Into::into).collect(),
+            config: std::sync::Arc::new(typst_utils::ManuallyHash::new(
+                highlight_configuration,
+                lang_hash,
+            )),
+        };
+
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+
+        Ok(highlight_configuration)
+    }
 }
 
 impl Reflect for TreeSitterSyntax {
