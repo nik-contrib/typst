@@ -130,9 +130,8 @@ bitflags! {
     /// Attributes of syntax-highlighted text
     #[derive(Default, Copy, Clone, Debug, PartialEq, Hash)]
     pub struct FontAttributes: u8 {
-        const BOLD = 0b00000001;
-        const UNDERLINE = 0b00000010;
-        const ITALIC = 0b00000100;
+        const BOLD   = 0b00000001;
+        const ITALIC = 0b00000010;
     }
 }
 
@@ -142,9 +141,6 @@ impl From<FontAttributes> for FontStyle {
         if attrs.contains(FontAttributes::BOLD) {
             font_style.insert(FontStyle::BOLD);
         }
-        if attrs.contains(FontAttributes::UNDERLINE) {
-            font_style.insert(FontStyle::UNDERLINE);
-        }
         if attrs.contains(FontAttributes::ITALIC) {
             font_style.insert(FontStyle::ITALIC);
         }
@@ -153,21 +149,12 @@ impl From<FontAttributes> for FontStyle {
 }
 
 /// Style of text highlighted by tree-sitter
-#[derive(std::hash::Hash, Clone, Debug, PartialEq, Copy)]
+#[derive(std::hash::Hash, Clone, Debug, PartialEq, Copy, Default)]
 pub struct TreeSitterStyle {
-    foreground: Color,
+    foreground: Option<Color>,
     background: Option<Color>,
+    underline: Option<Color>,
     attributes: FontAttributes,
-}
-
-impl Default for TreeSitterStyle {
-    fn default() -> Self {
-        Self {
-            foreground: Color::from_u8(0, 0, 0, 0),
-            background: Default::default(),
-            attributes: FontAttributes::default(),
-        }
-    }
 }
 
 impl Reflect for TreeSitterStyle {
@@ -190,7 +177,7 @@ impl IntoValue for TreeSitterStyle {
             "background" => self.background,
             "foreground" => self.foreground,
             "bold" => self.attributes.contains(FontAttributes::BOLD),
-            "underline" => self.attributes.contains(FontAttributes::UNDERLINE),
+            "underline" => self.underline,
             "italic" => self.attributes.contains(FontAttributes::ITALIC),
         }
         .into_value()
@@ -206,6 +193,7 @@ impl FromValue for TreeSitterStyle {
             return Ok(Self {
                 foreground,
                 background: None,
+                underline: None,
                 attributes: FontAttributes::default(),
             });
         }
@@ -213,19 +201,21 @@ impl FromValue for TreeSitterStyle {
         let mut dict = value.cast::<Dict>()?;
         let mut attributes = FontAttributes::default();
 
-        if dict.take("bold")?.cast()? {
+        if let Ok(bold) = dict.take("bold")
+            && bold.cast()?
+        {
             attributes.insert(FontAttributes::BOLD);
         }
-        if dict.take("underline")?.cast()? {
-            attributes.insert(FontAttributes::UNDERLINE);
-        }
-        if dict.take("italic")?.cast()? {
+        if let Ok(italic) = dict.take("italic")
+            && italic.cast()?
+        {
             attributes.insert(FontAttributes::ITALIC);
         }
 
         Ok(Self {
-            foreground: dict.take("foreground")?.cast()?,
-            background: dict.take("background")?.cast()?,
+            foreground: dict.take("foreground").unwrap_or_default().cast()?,
+            background: dict.take("background").unwrap_or_default().cast()?,
+            underline: dict.take("underline").unwrap_or_default().cast()?,
             attributes,
         })
     }
@@ -233,7 +223,18 @@ impl FromValue for TreeSitterStyle {
 
 impl From<TreeSitterStyle> for syntect::highlighting::Style {
     fn from(style: TreeSitterStyle) -> Self {
-        let foreground = style.foreground.to_rgb();
+        let foreground = style.foreground.map_or(
+            syntect::highlighting::Color { r: 255, g: 0, b: 0, a: 0 },
+            |bg| {
+                let fg = bg.to_rgb();
+                syntect::highlighting::Color {
+                    r: (fg.red * 255.0).round() as u8,
+                    g: (fg.green * 255.0).round() as u8,
+                    b: (fg.blue * 255.0).round() as u8,
+                    a: (fg.alpha * 255.0).round() as u8,
+                }
+            },
+        );
         let background = style.background.map_or(
             syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 },
             |bg| {
@@ -247,12 +248,7 @@ impl From<TreeSitterStyle> for syntect::highlighting::Style {
             },
         );
         Self {
-            foreground: syntect::highlighting::Color {
-                r: (foreground.red * 255.0).round() as u8,
-                g: (foreground.green * 255.0).round() as u8,
-                b: (foreground.blue * 255.0).round() as u8,
-                a: (foreground.alpha * 255.0).round() as u8,
-            },
+            foreground,
             background,
             font_style: style.attributes.into(),
         }
@@ -487,11 +483,16 @@ impl FromValue for TreeSitterSyntax {
 
         Ok(Self {
             name: dict.take("name")?.cast()?,
-            aliases: dict.take("aliases")?.cast()?,
+            aliases: dict
+                .take("aliases")
+                .unwrap_or_else(|_| {
+                    crate::foundations::Value::Array(crate::foundations::Array::default())
+                })
+                .cast()?,
             grammar: dict.take("grammar")?.cast()?,
-            highlights_query: dict.take("highlights-query")?.cast()?,
-            injections_query: dict.take("injections-query")?.cast()?,
-            locals_query: dict.take("locals-query")?.cast()?,
+            highlights_query: dict.take("highlights-query").unwrap_or_default().cast()?,
+            injections_query: dict.take("injections-query").unwrap_or_default().cast()?,
+            locals_query: dict.take("locals-query").unwrap_or_default().cast()?,
         })
     }
 }
@@ -517,6 +518,8 @@ pub(crate) fn highlight(
     // Whole text of the code block
     let text = lines.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>().join("\n");
 
+    // panic!("{text}");
+
     let mut current_highlight = None;
 
     // Text of the code block, broken up into individual
@@ -530,11 +533,9 @@ pub(crate) fn highlight(
                 .find(|config| config.matches(lang))
                 .map(|it| &**it.config)
         })
-        .into_iter()
-        .flatten()
-        .flatten()
+        .unwrap()
     {
-        match event {
+        match event.unwrap() {
             tree_sitter_highlight::HighlightEvent::Source { start, end } => {
                 pieces.push((&text[start..end], current_highlight));
             }
