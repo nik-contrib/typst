@@ -496,10 +496,9 @@ impl FromValue for TreeSitterSyntax {
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "each argument's type is unique, so it's fine"
-)]
+/// Highlight `lines` of text using the tree-sitter `syntax` with the
+/// color `theme`
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn highlight(
     all_configs: &[TreeSitterHighlightConfiguration],
     routines: &crate::routines::Routines,
