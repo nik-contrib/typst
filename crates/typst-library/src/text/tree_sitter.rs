@@ -532,8 +532,9 @@ pub(crate) fn highlight(
         })
         .into_iter()
         .flatten()
+        .flatten()
     {
-        match event.unwrap() {
+        match event {
             tree_sitter_highlight::HighlightEvent::Source { start, end } => {
                 pieces.push((&text[start..end], current_highlight));
             }
