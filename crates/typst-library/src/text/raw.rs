@@ -260,17 +260,6 @@ pub struct RawElem {
     #[fold]
     pub syntaxes: Derived<OneOrMultiple<DataSource>, Vec<RawSyntax>>,
 
-    /// Additional tree-sitter syntaxes to load
-    #[parse(match args.named("tree-sitter-syntaxes")? {
-        Some(sources) => Some(super::tree_sitter::TreeSitterHighlightConfiguration::load(engine.world, sources)?),
-        None => None
-    })]
-    #[fold]
-    pub tree_sitter_syntaxes: Derived<
-        OneOrMultiple<super::tree_sitter::TreeSitterSyntax>,
-        Vec<super::tree_sitter::TreeSitterHighlightConfiguration>,
-    >,
-
     /// The theme to use for syntax highlighting. Themes should be in the
     /// [`tmTheme` file format](https://www.sublimetext.com/docs/color_schemes_tmtheme.html).
     ///
@@ -312,6 +301,17 @@ pub struct RawElem {
         None => None,
     })]
     pub theme: Smart<Option<Derived<DataSource, RawTheme>>>,
+
+    /// Additional tree-sitter syntaxes to load
+    #[parse(match args.named("tree-sitter-syntaxes")? {
+        Some(sources) => Some(super::tree_sitter::TreeSitterHighlightConfiguration::load(engine.world, sources)?),
+        None => None
+    })]
+    #[fold]
+    pub tree_sitter_syntaxes: Derived<
+        OneOrMultiple<super::tree_sitter::TreeSitterSyntax>,
+        Vec<super::tree_sitter::TreeSitterHighlightConfiguration>,
+    >,
 
     /// The theme to use for syntax highlighting of tree-sitter grammars
     pub tree_sitter_theme: Option<super::tree_sitter::TreeSitterTheme>,
