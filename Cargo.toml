@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["download-tree-sitter"]
 members = ["crates/*", "docs", "tests", "tests/fuzz"]
 default-members = ["crates/typst-cli"]
 resolver = "2"

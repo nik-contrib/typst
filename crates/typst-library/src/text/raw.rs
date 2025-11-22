@@ -445,6 +445,10 @@ impl Packed<RawElem> {
                 },
             )
             .highlight();
+        } else if let Some(language) = crate::text::tree_sitter::query(lang.as_ref()) {
+            crate::text::tree_sitter::highlight(
+                routines, target, lines, &mut seq, foreground, count, language,
+            );
         } else if let Some((syntax_set, syntax)) = lang.and_then(|token| {
             // Prefer user-provided syntaxes over built-in ones.
             syntaxes
@@ -836,7 +840,7 @@ fn preprocess(
 }
 
 /// Style a piece of text with a syntect style.
-fn styled(
+pub fn styled(
     routines: &Routines,
     target: Target,
     piece: &str,

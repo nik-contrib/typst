@@ -1,0 +1,15 @@
+[package]
+name = "download-tree-sitter"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.9"
+bitflags = "2.10"
+syntect = "5.3"
+ureq = "3.1"
+anstream = "0.6"
+xshell = "0.2.7"
+eyre = "0.6"
+color-eyre = "0.6"
+rayon = "1.11"

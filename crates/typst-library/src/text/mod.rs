@@ -1467,3 +1467,6 @@ mod tests {
         assert_eq!(std::mem::size_of::<TextElem>(), std::mem::size_of::<EcoString>());
     }
 }
+
+pub mod tree_sitter;
+pub mod tree_sitter_generated;

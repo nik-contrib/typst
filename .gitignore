@@ -26,3 +26,6 @@ package-lock.json
 # Nix
 /result
 .direnv/
+
+checkouts
+download-tree-sitter/target
