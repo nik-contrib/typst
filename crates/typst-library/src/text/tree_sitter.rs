@@ -1,8 +1,9 @@
+use std::{io::Write, process::Stdio};
+
 pub fn query(s: Option<&ecow::EcoString>) -> Option<&'static str> {
     s.and_then(|token| {
         Some(match token.as_str() {
-            "rust" => "rust",
-            "comment" => "comment",
+            "rs" | "rust" => "rust",
             _ => return None,
         })
     })
@@ -26,81 +27,98 @@ pub fn highlight(
     count: i64,
     lang_name: &'static str,
 ) {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_wasm_store(
-            tree_sitter::WasmStore::new(ENGINE.get_or_init(Default::default)).unwrap(),
-        )
-        .unwrap();
-    let mut store = parser.take_wasm_store().unwrap();
+    // let mut parser = tree_sitter::Parser::new();
+    // parser
+    //     .set_wasm_store(
+    //         tree_sitter::WasmStore::new(ENGINE.get_or_init(Default::default)).unwrap(),
+    //     )
+    //     .unwrap();
+    // let mut store = parser.take_wasm_store().unwrap();
 
-    let mut languages: std::collections::HashMap<
-        &'static str,
-        tree_sitter_highlight::HighlightConfiguration,
-    > = std::collections::HashMap::new();
+    // let mut languages: std::collections::HashMap<
+    //     &'static str,
+    //     tree_sitter_highlight::HighlightConfiguration,
+    // > = std::collections::HashMap::new();
 
-    for (lang, data) in super::tree_sitter_generated::langs() {
-        let language_id = store.load_language(lang, data.wasm).unwrap();
-        let mut configuration = tree_sitter_highlight::HighlightConfiguration::new(
-            language_id,
-            lang,
-            data.highlights_query,
-            data.injections_query,
-            data.locals_query,
-        )
-        .unwrap();
-        configuration.configure(SCOPES);
-        languages.insert(lang, configuration);
+    // for (lang, data) in super::tree_sitter_generated::langs() {
+    //     let language_id = store.load_language(lang, data.wasm).unwrap();
+    //     let mut configuration = tree_sitter_highlight::HighlightConfiguration::new(
+    //         language_id,
+    //         lang,
+    //         data.highlights_query,
+    //         data.injections_query,
+    //         data.locals_query,
+    //     )
+    //     .unwrap();
+    //     configuration.configure(SCOPES);
+    //     languages.insert(lang, configuration);
+    // }
+
+    // parser.set_wasm_store(store).unwrap();
+
+    // let mut highlighter = tree_sitter_highlight::Highlighter::new();
+    // highlighter.parser = parser;
+
+    // let output = hx_highlight.wait_with_output().unwrap();
+
+    #[derive(serde::Deserialize, Default, Clone, Copy, Debug)]
+    struct HxStyle {
+        fg: Option<(u8, u8, u8)>,
+        bg: Option<(u8, u8, u8)>,
+        underline: bool,
+        italic: bool,
+        bold: bool,
     }
 
-    parser.set_wasm_store(store).unwrap();
+    impl From<HxStyle> for syntect::highlighting::Style {
+        fn from(style: HxStyle) -> Self {
+            let mut font_style = syntect::highlighting::FontStyle::empty();
+            if style.bold {
+                font_style.insert(syntect::highlighting::FontStyle::BOLD);
+            }
+            if style.italic {
+                font_style.insert(syntect::highlighting::FontStyle::ITALIC);
+            }
+            if style.underline {
+                font_style.insert(syntect::highlighting::FontStyle::UNDERLINE);
+            }
 
-    let mut highlighter = tree_sitter_highlight::Highlighter::new();
-    highlighter.parser = parser;
+            let fg = style
+                .fg
+                .map(|(r, g, b)| syntect::highlighting::Color { r, g, b, a: 255 })
+                .unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 });
+            let bg = style
+                .bg
+                .map(|(r, g, b)| syntect::highlighting::Color { r, g, b, a: 255 })
+                .unwrap_or(syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 0 });
+            Self { foreground: fg, background: bg, font_style }
+        }
+    }
 
     // Whole text of the code block as a single String
     let text = lines.iter().map(|(s, _)| s.clone()).collect::<Vec<_>>().join("\n");
 
-    let mut current_highlight = None;
+    // hx-highlight
+    //
+    // Figuring out how to get the right runtime directory is hard. so i replace the actual
+    // hx executable with hx-highlight under the same name
+    let mut hx_highlight = std::process::Command::new("hx")
+        .arg("--lang")
+        .arg(lang_name)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
 
-    // Text of the code block, broken up into individual
-    // string slices associated with their style
-    let mut pieces = Vec::new();
-
-    for event in highlighter
-        .highlight(languages.get(lang_name).unwrap(), text.as_bytes(), None, |lang| {
-            languages.get(lang)
-        })
-        .unwrap()
     {
-        match event.unwrap() {
-            tree_sitter_highlight::HighlightEvent::Source { start, end } => {
-                pieces.push((&text[start..end], current_highlight));
-            }
-            tree_sitter_highlight::HighlightEvent::HighlightStart(highlight) => {
-                let scope = SCOPES[highlight.0];
-                // For a string like "foo.bar.baz", we want to check if "foo.bar.baz" is a valid
-                // key. If not, check "foo.bar". If not, check "foo"
-                let mut current_scope = Vec::new();
-                // List of all the scopes we'll check at the end
-                let mut all_scopes = Vec::new();
-                for part in scope.split(".") {
-                    current_scope.push(part);
-                    all_scopes.push(current_scope.join("."));
-                }
-                let color = all_scopes
-                    .into_iter()
-                    .rev()
-                    .find_map(|scope| super::tree_sitter_generated::THEME.get(&scope))
-                    .copied()
-                    .unwrap_or_default();
-                current_highlight = Some(color);
-            }
-            tree_sitter_highlight::HighlightEvent::HighlightEnd => {
-                current_highlight = None;
-            }
-        }
+        let stdin = hx_highlight.stdin.as_mut().expect("failed to open stdin");
+        stdin.write_all(text.as_bytes()).unwrap();
     }
+
+    let output = hx_highlight.wait_with_output().unwrap();
+
+    let pieces =
+        serde_json::from_slice::<Vec<(String, HxStyle)>>(&output.stdout).unwrap();
 
     let mut chars = Vec::new();
     for (piece, style) in pieces {
@@ -134,8 +152,7 @@ pub fn highlight(
                 target,
                 &piece,
                 foreground,
-                // If its `None`, then it is a whitespace character
-                style.unwrap_or_default(),
+                style.into(),
                 line_span,
                 span_offset,
             ));

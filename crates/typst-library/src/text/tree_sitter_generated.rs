@@ -10,16 +10,6 @@ std::collections::HashMap::from([
             wasm: include_bytes!("../../../../checkouts/tree-sitter-rust/grammar.wasm"),
         },
     ),
-
-    (
-        "comment",
-        LanguageData {
-            highlights_query: include_str!("../../../../checkouts/helix/runtime/queries/comment/highlights.scm"),
-            injections_query: include_str!("../../../../checkouts/helix/runtime/queries/comment/injections.scm"),
-            locals_query: include_str!("../../../../checkouts/helix/runtime/queries/comment/locals.scm"),
-            wasm: include_bytes!("../../../../checkouts/tree-sitter-comment/grammar.wasm"),
-        },
-    ),
 ])}
 pub static THEME: std::sync::LazyLock<
     std::collections::HashMap<String, syntect::highlighting::Style>,
@@ -140,7 +130,7 @@ pub static THEME: std::sync::LazyLock<
         font_style: syntect::highlighting::FontStyle::empty()
     ,}),
     ("function.macro".to_string(), syntect::highlighting::Style {
-        foreground: syntect::highlighting::Color { r: 203, g: 166, b: 247, a: 255 },
+        foreground: syntect::highlighting::Color { r: 245, g: 224, b: 220, a: 255 },
         background: syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 },
         font_style: syntect::highlighting::FontStyle::empty()
     ,}),
@@ -520,7 +510,7 @@ pub static THEME: std::sync::LazyLock<
         font_style: syntect::highlighting::FontStyle::empty()
     ,}),
     ("variable.other.member".to_string(), syntect::highlighting::Style {
-        foreground: syntect::highlighting::Color { r: 137, g: 180, b: 250, a: 255 },
+        foreground: syntect::highlighting::Color { r: 148, g: 226, b: 213, a: 255 },
         background: syntect::highlighting::Color { r: 0, g: 0, b: 0, a: 255 },
         font_style: syntect::highlighting::FontStyle::empty()
     ,}),

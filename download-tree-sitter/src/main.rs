@@ -10,7 +10,7 @@ use toml::{map::Map, Value};
 
 const HELIX_COMMIT: &str = "68c7e8757f0183adeb01ba1fbbabd1cee2885b70";
 // Languages to add tree-sitter support for
-const LANGUAGES: &[&str] = &["rust", "comment"];
+const LANGUAGES: &[&str] = &["rust"];
 const THEME: &str = "catppuccin_mocha";
 
 fn main() -> eyre::Result<()> {
@@ -470,6 +470,10 @@ bitflags::bitflags! {
 fn build_theme_values(
     mut values: Map<String, Value>,
 ) -> (HashMap<String, Style>, Vec<String>, Vec<Style>, usize, Vec<String>) {
+    // HACK: Custom catppuccin color overrides
+    values.insert("variable.other.member".into(), "teal".into());
+    values.insert("function.macro".into(), "rosewater".into());
+
     let mut styles = HashMap::new();
     let mut scopes = Vec::new();
     let mut highlights = Vec::new();
