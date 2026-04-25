@@ -257,7 +257,7 @@ pub struct RawElem {
         None => None,
     })]
     #[fold]
-    pub syntaxes: Derived<OneOrMultiple<DataSource>, Vec<RawSyntax>>,
+    pub syntaxes: Derived<OneOrMultiple<DataSource>, ()>,
 
     /// The theme to use for syntax highlighting. Themes should be in the
     /// [`tmTheme` file format](https://www.sublimetext.com/docs/color_schemes_tmtheme.html).
@@ -390,6 +390,7 @@ impl Packed<RawElem> {
         };
 
         let syntaxes = LazyCell::new(|| elem.syntaxes.get_cloned(styles));
+
         let theme: &synt::Theme = match elem.theme.get_ref(styles) {
             Smart::Auto => &RAW_THEME,
             Smart::Custom(Some(theme)) => theme.derived.get(),
@@ -420,6 +421,7 @@ impl Packed<RawElem> {
                     let span_offset = text[..range.start]
                         .rfind('\n')
                         .map_or(0, |i| range.start - (i + 1));
+
                     styled(
                         routines,
                         target,
@@ -579,31 +581,13 @@ impl RawSyntax {
     fn load(
         world: Tracked<dyn World + '_>,
         sources: Spanned<OneOrMultiple<DataSource>>,
-    ) -> SourceResult<Derived<OneOrMultiple<DataSource>, Vec<RawSyntax>>> {
+    ) -> SourceResult<Derived<OneOrMultiple<DataSource>, ()>> {
         let loaded = sources.load(world)?;
-        let list = loaded
-            .iter()
-            .map(|data| Self::decode(&data.data).within(data))
-            .collect::<SourceResult<_>>()?;
-        Ok(Derived::new(sources.v, list))
-    }
 
-    /// Decode a syntax from a loaded source.
-    #[comemo::memoize]
-    #[typst_macros::time(name = "load syntaxes")]
-    fn decode(bytes: &Bytes) -> LoadResult<RawSyntax> {
-        let str = bytes.as_str()?;
-
-        let syntax = SyntaxDefinition::load_from_str(str, false, None)
-            .map_err(format_syntax_error)?;
-
-        let mut builder = SyntaxSetBuilder::new();
-        builder.add(syntax);
-
-        Ok(RawSyntax(Arc::new(ManuallyHash::new(
-            builder.build(),
-            typst_utils::hash128(bytes),
-        ))))
+        for data in loaded {
+            world.add_syntax_grammar(data.data.as_slice()).unwrap();
+        }
+        Ok(())
     }
 
     /// Return the underlying syntax set.
@@ -639,7 +623,12 @@ impl RawTheme {
     fn load(
         world: Tracked<dyn World + '_>,
         source: Spanned<DataSource>,
-    ) -> SourceResult<Derived<DataSource, Self>> {
+    ) -> SourceResult<Derived<DataSource, ()>> {
+        world.add_syntax_theme(&loaded.data).unwrap();
+
+        giallo::Registry::builtin().unwrap().add_grammar_from_path(path)
+
+        Ok(())
         let loaded = source.load(world)?;
         let theme = Self::decode(&loaded.data).within(&loaded)?;
         Ok(Derived::new(source.v, theme))

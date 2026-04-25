@@ -58,6 +58,7 @@ toml = { workspace = true }
 ureq = { workspace = true }
 xz2 = { workspace = true, optional = true }
 zip = { workspace = true, optional = true }
+giallo = { workspace = true }
 
 [build-dependencies]
 chrono = { workspace = true }

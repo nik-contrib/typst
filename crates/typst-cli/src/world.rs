@@ -47,6 +47,8 @@ pub struct SystemWorld {
     slots: Mutex<FxHashMap<FileId, FileSlot>>,
     /// Holds information about where packages are stored.
     package_storage: PackageStorage,
+    /// Holds all grammars and themes for all languages
+    syntax_registry: Mutex<giallo::Registry>,
     /// The current datetime if requested. This is stored here to ensure it is
     /// always the same within one compilation.
     /// Reset between compilations if not [`Now::Fixed`].
@@ -144,6 +146,7 @@ impl SystemWorld {
             slots: Mutex::new(FxHashMap::default()),
             package_storage: package::storage(&world_args.package),
             now,
+            syntax_registry: Mutex::new(giallo::Registry::builtin()?),
         })
     }
 
@@ -256,6 +259,14 @@ impl World for SystemWorld {
             with_offset.month().try_into().ok()?,
             with_offset.day().try_into().ok()?,
         )
+    }
+
+    fn add_syntax_grammar(&self, data: &[u8]) -> Result<(), giallo::Error> {
+        self.syntax_registry.lock().add_grammar_from_bytes(data)
+    }
+
+    fn add_syntax_theme(&self, data: &[u8]) -> Result<(), giallo::Error> {
+        self.syntax_registry.lock().add_theme_from_bytes(data)
     }
 }
 
@@ -493,6 +504,8 @@ pub enum WorldCreationError {
     RootNotFound(PathBuf),
     /// Another type of I/O error.
     Io(io::Error),
+    /// Error when creating loading the default syntaxes or themes
+    Giallo(giallo::Error),
 }
 
 impl fmt::Display for WorldCreationError {
@@ -508,6 +521,7 @@ impl fmt::Display for WorldCreationError {
                 write!(f, "root directory not found (searched at {})", path.display())
             }
             WorldCreationError::Io(err) => write!(f, "{err}"),
+            WorldCreationError::Giallo(err) => write!(f, "{err}"),
         }
     }
 }
